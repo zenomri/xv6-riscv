@@ -18,6 +18,9 @@ struct context {
   uint64 s11;
 };
 
+extern int is_paused;
+extern int rate = 5;
+
 // Per-CPU state.
 struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.
@@ -93,6 +96,7 @@ struct proc {
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
 
+
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
 
@@ -105,4 +109,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  uint64 mean_ticks;
+  uint64 last_ticks;
 };
