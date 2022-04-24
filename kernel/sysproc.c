@@ -111,3 +111,9 @@ sys_ks(void)
 {
 return kill_system();
 }
+
+uint64
+sys_print(void)
+{
+ return print_stats(); 
+}

@@ -8,8 +8,16 @@
 
 int is_paused = 0;
 
-uint ticks_to_pause;
+uint64 ticks_to_pause;
 
+uint64 sleeping_processes_mean = 0;
+uint64 running_processes_mean = 0;
+uint64 runnable_processes_mean = 0;
+
+uint64 num_of_procs = 0;
+uint64 program_time =0; 
+uint63 start_time; 
+uint64 cpu_utilization;
 
 struct cpu cpus[NCPU];
 
@@ -52,7 +60,9 @@ void
 procinit(void)
 {
   struct proc *p;
-  
+  acquire(&tickslock);
+  start_time = ticks;
+  release(&tickslock);
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
@@ -248,6 +258,9 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+  acquire(&tickslock)
+  p->time_assistant =ticks;
+  release(&tickslock);
 
   release(&p->lock);
 }
@@ -318,6 +331,12 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  acquire(&tickslock)
+  np->time_assistant = ticks;
+  #if SCHEDFLAG == FCFS
+   np->last_runnable_time = ticks;
+  #endif
+  release(tickslock); 
   release(&np->lock);
 
   return pid;
@@ -370,11 +389,23 @@ exit(int status)
 
   // Parent might be sleeping in wait().
   wakeup(p->parent);
-  
+  acquire(&tickslock);
+  uint64 ticks0 = ticks;
+  release(&tickslock);
   acquire(&p->lock);
+
+  p->time_assistant = ticks0 - p->time_assistant;
+  p->running_time = p->running_time + p->time_assistant;
 
   p->xstate = status;
   p->state = ZOMBIE;
+  num_of_procs++;
+
+  sleeping_processes_mean = (p->sleeping_time + ((num_of_procs-1)* sleeping_processes_mean)) / num_of_procs;
+  running_processes_mean = (p->running_time+ ((num_of_procs-1)* running_processes_mean)) / num_of_procs;
+  runnable_processes_mean = (p->runnable_time + ((num_of_procs-1)* runnable_processes_mean)) / num_of_procs;
+  program_time = program_time + p-> running_time;
+  cpu_utilization = program_time / (ticks0 - start_time);
 
   release(&wait_lock);
 
@@ -443,14 +474,19 @@ wait(uint64 addr)
  int kill_system(void){
 
   struct proc *p;
-
+  acquire(&tickslock);
+  uint64 ticks0 = ticks;
+  release(&tickslock);
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
     if(p->pid != 1 && p->pid != 2){
       p->killed = 1;
       if(p->state == SLEEPING){
+        p->time_assistant = ticks0 - p->time_assistant;
+        p->sleeping_time = p->sleeping_time + p->time_assistant;
         // Wake process from sleep().
         p->state = RUNNABLE;
+        p->time_assistant = ticks0;
       }
       release(&p->lock);
       return 0;
@@ -459,6 +495,18 @@ wait(uint64 addr)
   }
   return 0;
 }
+
+void print_stats(void){
+  printf("the sleeping processes mean = %d \n", sleeping_processes_mean);
+  printf("the running processes mean = %d \n", running_processes_mean);
+  printf("the runnable processes mean = %d \n", runnable_processes_mean);
+  printf("the number of procs  = %d \n", num_of_procs);
+  printf("the program time = %d \n", program_time);
+  printf("the cpu utilization = %d \n",cpu_utilization);
+
+}
+
+
  
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -502,15 +550,47 @@ scheduler(void)
               else continue;
             }
           #endif
+         #if SCHEDFLAG == FCFS
+          if(p->last_runnable_time < min_mean){
+            min_proc = p;
+            if(p == &proc[NPROC]){
+              release(&p->lock);
+              p = min_proc;
+              acquire(&p->lock);
+            }
+            else continue;
+          }
+         #endif
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
+        p->time_assistant = ticks - p->time_assistant;
+        p->runnable_time = p->runable_time + p->time_assistant;
         p->state = RUNNING;
-        acquire(&tickslock)
-        p->last_ticks = ticks;
-        release(tickslock);
+        p->time_assistant = ticks;
+        release(&tickslock);
         c->proc = p;
+        #if SCHEDFLAG == SJF
+          acquire(&tickslock)
+          p->last_ticks = ticks;
+          release(tickslock);
+        #endif
+
+        #if SCHEDFLAG != DEFAULT
+          intr_off();
+        #endif
+
         swtch(&c->context, &p->context);
+        #if SCHEDFLAG != DEFAULT
+          intr_on();
+        #endif
+        #if SCHEDFLAG == SJF
+          acquire(&tickslock)
+          p->last_ticks = ticks - p->last_ticks;
+          release(tickslock);
+          p->mean_ticks =  (((10 - rate) * p->mean_ticks) + (p->last_ticks * (rate))) / 10 ;
+        #endif
+
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
@@ -552,9 +632,20 @@ sched(void)
 void
 yield(void)
 {
+  acquire(&tickslock);
+  uint64 ticks0 = ticks;
+  release(&tickslock); 
   struct proc *p = myproc();
   acquire(&p->lock);
+
+  p->time_assistant = ticks0 - p->time_assistant;
+  p->running_time = p->running_time + p->time_assistant;
   p->state = RUNNABLE;
+  p->time_assistant = ticks0;
+  #if SCHEDFLAG == FCFS
+   p->last_runnable_time = ticks0;
+  #endif
+
   sched();
   release(&p->lock);
 }
@@ -600,13 +691,10 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
+  acquire(&tickslock);
+  p->time_assistant = ticks;
+  release(&tickslock);
 
-  #if SCHEDFLAG == SJF
-    acquire(&tickslock)
-    p->last_ticks = ticks - p->last_ticks;
-    release(tickslock);
-    p->mean_ticks =  (((10 - rate) * p->mean_ticks) + (p->last_ticks * (rate))) / 10 ;
-  #endif
   sched();
 
   // Tidy up.
@@ -628,7 +716,17 @@ wakeup(void *chan)
     if(p != myproc()){
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
+        acquire(&tickslock);
+        p->time_assistant = ticks - p->time_assistant;
+        p->sleeping_time = p->sleeping_time + p->time_assistant;
         p->state = RUNNABLE;
+        p->time_assistant = ticks;
+        release(&tickslock);
+        #if SCHEDFLAG == FCFS
+          acquire(&tickslock)
+          p->last_runnable_time = ticks;
+          release(tickslock);
+        #endif
       }
       release(&p->lock);
     }
@@ -642,14 +740,19 @@ int
 kill(int pid)
 {
   struct proc *p;
-
+  acquire(&tickslock);
+  uint64 ticks0 = ticks;
+  release(&tickslock);
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
     if(p->pid == pid){
       p->killed = 1;
       if(p->state == SLEEPING){
+        p->time_assistant = ticks0 - p->time_assistant;
+        p->sleeping_time = p->sleeping_time + p->time_assistant;
         // Wake process from sleep().
         p->state = RUNNABLE;
+        p->time_assistant = ticks0;
       }
       release(&p->lock);
       return 0;

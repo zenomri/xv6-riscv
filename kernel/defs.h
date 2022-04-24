@@ -101,6 +101,7 @@ void            userinit(void);
 int             wait(uint64);
 int             pause_system(int);
 int             kill_system(void);
+void            print_stats(void);         
 void            wakeup(void*);
 void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);

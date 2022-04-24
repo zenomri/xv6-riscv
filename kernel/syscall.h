@@ -22,3 +22,4 @@
 #define SYS_close  21
 #define SYS_pause  22
 #define SYS_ks     23
+#define SYS_print  24
