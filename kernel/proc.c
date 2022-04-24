@@ -7,6 +7,7 @@
 #include "defs.h"
 
 int is_paused = 0;
+int rate = 5;
 
 uint64 ticks_to_pause;
 
@@ -16,7 +17,7 @@ uint64 runnable_processes_mean = 0;
 
 uint64 num_of_procs = 0;
 uint64 program_time =0; 
-uint63 start_time; 
+uint64 start_time; 
 uint64 cpu_utilization;
 
 struct cpu cpus[NCPU];
@@ -258,7 +259,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
-  acquire(&tickslock)
+  acquire(&tickslock);
   p->time_assistant =ticks;
   release(&tickslock);
 
@@ -331,12 +332,12 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
-  acquire(&tickslock)
+  acquire(&tickslock);
   np->time_assistant = ticks;
   #if SCHEDFLAG == FCFS
    np->last_runnable_time = ticks;
   #endif
-  release(tickslock); 
+  release(&tickslock); 
   release(&np->lock);
 
   return pid;
@@ -465,7 +466,7 @@ wait(uint64 addr)
 
  int pause_system(int seconds){
    is_paused = 1;
-   acquire(&tickslock)
+   acquire(&tickslock);
    ticks_to_pause = ticks + (seconds * 10);
    release(&tickslock);
    return 0;
@@ -529,11 +530,11 @@ scheduler(void)
     uint64 min_mean = 0xffffffffffffffff;
     struct proc *min_proc;
     for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&tickslock); 
+      uint ticks0 = ticks;   
+      release(&tickslock);
       acquire(&p->lock);
       if(is_paused && p->pid != 1 && p->pid !=2){
-        acquire(&tickslock); 
-        uint ticks0 = ticks;   
-        release(&tickslock);
         if(ticks0 > ticks_to_pause)
           is_paused = 0;
         else continue;        
@@ -564,16 +565,15 @@ scheduler(void)
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
-        p->time_assistant = ticks - p->time_assistant;
-        p->runnable_time = p->runable_time + p->time_assistant;
+        p->time_assistant = ticks0 - p->time_assistant;
+        p->runnable_time = p->runnable_time + p->time_assistant;
         p->state = RUNNING;
-        p->time_assistant = ticks;
-        release(&tickslock);
+        p->time_assistant = ticks0;
         c->proc = p;
         #if SCHEDFLAG == SJF
-          acquire(&tickslock)
+          acquire(&tickslock);
           p->last_ticks = ticks;
-          release(tickslock);
+          release(&tickslock);
         #endif
 
         #if SCHEDFLAG != DEFAULT
@@ -585,9 +585,9 @@ scheduler(void)
           intr_on();
         #endif
         #if SCHEDFLAG == SJF
-          acquire(&tickslock)
+          acquire(&tickslock);
           p->last_ticks = ticks - p->last_ticks;
-          release(tickslock);
+          release(&tickslock);
           p->mean_ticks =  (((10 - rate) * p->mean_ticks) + (p->last_ticks * (rate))) / 10 ;
         #endif
 
@@ -723,9 +723,9 @@ wakeup(void *chan)
         p->time_assistant = ticks;
         release(&tickslock);
         #if SCHEDFLAG == FCFS
-          acquire(&tickslock)
+          acquire(&tickslock);
           p->last_runnable_time = ticks;
-          release(tickslock);
+          release(&tickslock);
         #endif
       }
       release(&p->lock);

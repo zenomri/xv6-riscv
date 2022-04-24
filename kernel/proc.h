@@ -19,7 +19,7 @@ struct context {
 };
 
 extern int is_paused;
-extern int rate = 5;
+extern int rate;
 
 // Per-CPU state.
 struct cpu {

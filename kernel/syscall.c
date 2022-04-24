@@ -106,6 +106,7 @@ extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
 extern uint64 sys_pause(void);
 extern uint64 sys_ks(void);
+extern uint64 sys_print(void);
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,

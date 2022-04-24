@@ -115,5 +115,6 @@ return kill_system();
 uint64
 sys_print(void)
 {
- return print_stats(); 
+ print_stats(); 
+ return 0;
 }
