@@ -36,3 +36,6 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
+entry("pause_system");
+entry("kill_system");
+entry("print_stats");

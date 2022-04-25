@@ -334,7 +334,7 @@ fork(void)
   np->state = RUNNABLE;
   acquire(&tickslock);
   np->time_assistant = ticks;
-  #if SCHEDFLAG == FCFS
+  #ifdef FCFS
    np->last_runnable_time = ticks;
   #endif
   release(&tickslock); 
@@ -397,7 +397,6 @@ exit(int status)
 
   p->time_assistant = ticks0 - p->time_assistant;
   p->running_time = p->running_time + p->time_assistant;
-
   p->xstate = status;
   p->state = ZOMBIE;
   num_of_procs++;
@@ -406,7 +405,7 @@ exit(int status)
   running_processes_mean = (p->running_time+ ((num_of_procs-1)* running_processes_mean)) / num_of_procs;
   runnable_processes_mean = (p->runnable_time + ((num_of_procs-1)* runnable_processes_mean)) / num_of_procs;
   program_time = program_time + p-> running_time;
-  cpu_utilization = program_time / (ticks0 - start_time);
+  cpu_utilization = (program_time*100) / (ticks0 - start_time);
 
   release(&wait_lock);
 
@@ -475,12 +474,13 @@ wait(uint64 addr)
  int kill_system(void){
 
   struct proc *p;
+  struct proc *my_p = myproc();
   acquire(&tickslock);
   uint64 ticks0 = ticks;
   release(&tickslock);
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
-    if(p->pid != 1 && p->pid != 2){
+    if(p->pid != 1 && p->pid != 2 && p->pid != my_p->pid){
       p->killed = 1;
       if(p->state == SLEEPING){
         p->time_assistant = ticks0 - p->time_assistant;
@@ -489,11 +489,12 @@ wait(uint64 addr)
         p->state = RUNNABLE;
         p->time_assistant = ticks0;
       }
-      release(&p->lock);
-      return 0;
     }
     release(&p->lock);
   }
+  acquire(&my_p->lock);
+  my_p->killed = 1;
+  release(&my_p->lock);
   return 0;
 }
 
@@ -527,8 +528,12 @@ scheduler(void)
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
+    
+    #ifndef DEFAULT
     uint64 min_mean = 0xffffffffffffffff;
     struct proc *min_proc;
+    #endif
+    
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&tickslock); 
       uint ticks0 = ticks;   
@@ -537,29 +542,58 @@ scheduler(void)
       if(is_paused && p->pid != 1 && p->pid !=2){
         if(ticks0 > ticks_to_pause)
           is_paused = 0;
-        else continue;        
+        else {
+          release(&p->lock);
+          continue;        
+        }
       }
       if(p->state == RUNNABLE) {
-          #if SCHEDFLAG == SJF
+          #ifdef SJF
             if(p->mean_ticks < min_mean){
+              //current process is the minimum
+              min_mean = p->mean_ticks; //
               min_proc = p;
-              if(p == &proc[NPROC]){
+              if((p + sizeof(struct proc)) < &proc[NPROC]){
+                // this minimum is not the last process
                 release(&p->lock);
+                continue;
+              }
+              else {
+                // this minimum is the last
+                min_proc = 0;
+                min_mean = 0xffffffffffffffff;
+              }
+            } else {
+              // the process is not the minimum
+              release(&p->lock);
+              if ((p + sizeof(struct proc)) >= &proc[NPROC]){
                 p = min_proc;
                 acquire(&p->lock);
-              }
-              else continue;
+              } else continue;
+
             }
+
           #endif
-         #if SCHEDFLAG == FCFS
+         #ifdef FCFS
           if(p->last_runnable_time < min_mean){
             min_proc = p;
-            if(p == &proc[NPROC]){
+            min_mean = p->last_runnable_time;
+            if((p + sizeof(struct proc)) < &proc[NPROC]){
+              // this minimum is not the last process
               release(&p->lock);
+              continue;
+            } else {
+                // this minimum is the last
+                min_proc = 0;
+                min_mean = 0xffffffffffffffff;
+            }
+          } else {
+            // the process is not the minimum
+            release(&p->lock);
+            if ((p + sizeof(struct proc)) >= &proc[NPROC]){
               p = min_proc;
               acquire(&p->lock);
-            }
-            else continue;
+            } else continue;
           }
          #endif
         // Switch to chosen process.  It is the process's job
@@ -570,21 +604,15 @@ scheduler(void)
         p->state = RUNNING;
         p->time_assistant = ticks0;
         c->proc = p;
-        #if SCHEDFLAG == SJF
+        #ifdef SJF
           acquire(&tickslock);
           p->last_ticks = ticks;
           release(&tickslock);
         #endif
 
-        #if SCHEDFLAG != DEFAULT
-          intr_off();
-        #endif
-
         swtch(&c->context, &p->context);
-        #if SCHEDFLAG != DEFAULT
-          intr_on();
-        #endif
-        #if SCHEDFLAG == SJF
+
+        #ifdef SJF
           acquire(&tickslock);
           p->last_ticks = ticks - p->last_ticks;
           release(&tickslock);
@@ -642,10 +670,9 @@ yield(void)
   p->running_time = p->running_time + p->time_assistant;
   p->state = RUNNABLE;
   p->time_assistant = ticks0;
-  #if SCHEDFLAG == FCFS
+  #ifdef FCFS
    p->last_runnable_time = ticks0;
   #endif
-
   sched();
   release(&p->lock);
 }
@@ -687,7 +714,6 @@ sleep(void *chan, struct spinlock *lk)
 
   acquire(&p->lock);  //DOC: sleeplock1
   release(lk);
-
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
@@ -722,7 +748,7 @@ wakeup(void *chan)
         p->state = RUNNABLE;
         p->time_assistant = ticks;
         release(&tickslock);
-        #if SCHEDFLAG == FCFS
+        #if FCFS
           acquire(&tickslock);
           p->last_runnable_time = ticks;
           release(&tickslock);

@@ -97,7 +97,7 @@ sys_uptime(void)
 }
 
 uint64
-sys_pause(void)
+sys_pause_system(void)
 {
   int seconds;
 
@@ -107,13 +107,13 @@ sys_pause(void)
 }
 
 uint64
-sys_ks(void)
+sys_kill_system(void)
 {
 return kill_system();
 }
 
 uint64
-sys_print(void)
+sys_print_stats(void)
 {
  print_stats(); 
  return 0;
