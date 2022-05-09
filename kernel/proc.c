@@ -40,7 +40,7 @@ struct spinlock wait_lock;
 // guard page.
 int
 linked_list_remove(struct proc* p, struct proc* head ){
-  printf("we removed process %d from list %d \n", ((int)(p-proc))/8 , head->pid);
+  // printf("We removed process %d from list %d \n" , ((int)(p-proc)) , head->pid);
   struct proc* pred, *curr;
   pred = head;
   acquire(&pred->lock);
@@ -48,7 +48,10 @@ linked_list_remove(struct proc* p, struct proc* head ){
     curr = &proc[pred->next];
     acquire(&curr->lock);
   }
-  else return 0;
+  else {
+    release(&pred->lock);
+    return 0;
+  }
   while(curr->next != -1 || curr == p){
     if (curr == p) {
       pred->next = curr->next;
@@ -69,19 +72,22 @@ linked_list_remove(struct proc* p, struct proc* head ){
 
 void
 linked_list_add(struct proc* p, struct proc* head ){
-  printf("we added process number %d to list %d \n", ((int)(p-proc))/(sizeof (struct proc)), head->pid);
+  // printf("we added process number %d to list %d \n", ((int)(p-proc)), head->pid);
   struct proc *curr, *pred;
   curr = head;
+  p->next = -1;
+
+  
   acquire(&curr->lock);
   while(1){
   if (curr->next == -1) {
-    curr->next = ((int)(p-proc))/(sizeof (struct proc));
+    curr->next = ((int)(p-proc));
     release(&curr->lock);
-    printf("yay");
     return ;
   }
   pred = curr;
   curr = &proc[curr->next];
+  
   acquire(&curr->lock);
   release(&pred->lock);
   }
@@ -129,9 +135,6 @@ procinit(void)
       p->kstack = KSTACK((int) (p - proc));
       p->next = -1;
       linked_list_add(p, &unused_head);
-      printf("p address is %p and proc address is %p\n", p, proc);
-       printf("for loop- we added process number %d to list unused \n", ((int)(p-proc))/8);
-  
   }
 }
 
@@ -239,7 +242,9 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  release(&p->lock);
   linked_list_remove(p, &zombie_head);
+  // printf("remove zombie = %d", res);
   linked_list_add(p, &unused_head);
 }
 
@@ -491,7 +496,7 @@ wait(uint64 addr)
             return -1;
           }
           freeproc(np);
-          release(&np->lock);
+          // release(&np->lock);
           release(&wait_lock);
           return pid;
         }
@@ -528,13 +533,16 @@ scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
     int n = (mycpu()->ready_head).next;
+    if (n == -1)
+      continue;
+    // printf("scheduler n = %d \n", n);
     p = &proc[n];
+    linked_list_remove(p, &mycpu()->ready_head);
     acquire(&p->lock);
     // Switch to chosen process.  It is the process's job
     // to release its lock and then reacquire it
     // before jumping back to us.
     p->state = RUNNING;
-    linked_list_remove(p, &mycpu()->ready_head);
     c->proc = p;
     swtch(&c->context, &p->context);
 
@@ -644,9 +652,11 @@ void
 wakeup(void *chan)
 {
   struct proc *curr;
-
+// printf("wakeup\n");
   curr = &sleeping_head;
   while(1){
+    // printf("wakeup iteration, next is = %d\n", curr->next);
+
     acquire(&curr->lock);
     if(curr->chan == chan) {    
       curr->state = RUNNABLE;
@@ -655,6 +665,7 @@ wakeup(void *chan)
       linked_list_add(curr, &(cpus[curr->cpu_number].ready_head));
     }
     else release(&curr->lock);
+
     if(curr->next == -1)
       break;
     curr = &proc[curr->next];
