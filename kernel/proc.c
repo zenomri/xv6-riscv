@@ -201,7 +201,7 @@ found:
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
-    release(&p->lock);
+    // release(&p->lock);
     return 0;
   }
 
@@ -209,7 +209,7 @@ found:
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
     freeproc(p);
-    release(&p->lock);
+    // release(&p->lock);
     return 0;
   }
 
@@ -369,7 +369,7 @@ fork(void)
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
-    release(&np->lock);
+    // release(&np->lock);
     return -1;
   }
   np->sz = p->sz;
@@ -630,12 +630,14 @@ sleep(void *chan, struct spinlock *lk)
   // so it's okay to release lk.
 
   acquire(&p->lock);  //DOC: sleeplock1
+  linked_list_add(p, &sleeping_head);
   release(lk);
 
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
-  linked_list_add(p, &sleeping_head);
+  p->cpu_number = cpuid();
+  
   sched();
 
   // Tidy up.
@@ -651,24 +653,33 @@ sleep(void *chan, struct spinlock *lk)
 void
 wakeup(void *chan)
 {
-  struct proc *curr;
+  struct proc *curr, *pred;
 // printf("wakeup\n");
-  curr = &sleeping_head;
+  pred = &sleeping_head;
+  acquire(&pred->lock);
   while(1){
     // printf("wakeup iteration, next is = %d\n", curr->next);
+    if(pred->next == -1) {
+      release(&pred->lock);
+      break;
+    }
 
+    curr = &proc[pred->next];
     acquire(&curr->lock);
+
     if(curr->chan == chan) {    
       curr->state = RUNNABLE;
-      release(&curr->lock);
-      linked_list_remove(curr, &sleeping_head);
+      pred->next = curr->next;
       linked_list_add(curr, &(cpus[curr->cpu_number].ready_head));
+      release(&curr->lock);
+      continue;
+      // linked_list_remove(curr, &sleeping_head);
+      
     }
-    else release(&curr->lock);
-
-    if(curr->next == -1)
-      break;
-    curr = &proc[curr->next];
+    else {
+      release(&pred->lock);
+      pred = curr;
+    }
   }
 }
 
@@ -759,7 +770,25 @@ procdump(void)
 }
 
 
+int
+set_cpu(int cpu_num)
+{
+  
+  if (cpu_num < 0 || cpu_num > CPUS-1)
+    return -1;
+  struct proc *p = myproc();
+  acquire(&p->lock);
+  p->state = RUNNABLE;
+  linked_list_add(p, &(cpus[cpu_num].ready_head));
+  sched();
+  release(&p->lock);
+  return cpu_num;
 
+}
 
-
+int
+get_cpu()
+{
+  return cpuid();
+}
 
