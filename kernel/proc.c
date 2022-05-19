@@ -400,7 +400,25 @@ fork(void)
   np->state = RUNNABLE;
   release(&np->lock);
   //linked_list_remove(np, &unused_head);  * already removed in allocproc
-  linked_list_add(np, &mycpu()->ready_head);
+  struct cpu *mincpu = cpus;
+  #ifdef BLNCFLG
+    uint64 min = 0xffffffffffffffff;
+    struct cpu *c;
+    for(c = cpus; c < &cpus[numcpus]; c++) {
+      if(c->counter < min)
+        mincpu = c;
+    }
+
+    acquire(&mincpu->lock);
+    mincpu-> counter = mincpu-> counter +1;
+    release(&mincpu->lock);
+  
+  #else
+    mincpu = mycpu();
+  #endif
+
+ linked_list_add(np, &(mincpu->ready_head));
+ 
 
   return pid;
 }
@@ -529,6 +547,8 @@ scheduler(void)
   struct cpu *c = mycpu();
   
   c->proc = 0;
+  c->counter = 0;
+  initlock(&c->lock,"cpu_lock");
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
@@ -670,7 +690,24 @@ wakeup(void *chan)
     if(curr->chan == chan) {    
       curr->state = RUNNABLE;
       pred->next = curr->next;
-      linked_list_add(curr, &(cpus[curr->cpu_number].ready_head));
+      struct cpu *mincpu = cpus;
+      #ifdef BLNCFLG                           /////////////////////     4.2
+        uint64 min = 0xffffffffffffffff;
+        struct cpu *c;
+        for(c = cpus; c < &cpus[numcpus]; c++) {
+          if(c->counter < min)
+            mincpu = c;
+        }
+
+        acquire(&mincpu->lock);
+        mincpu-> counter = mincpu-> counter +1;
+        release(&mincpu->lock);
+      
+      #else
+        mincpu = &cpus[curr->cpu_number];
+      #endif                                   ///////////////////// end of 4.2                                  
+
+      linked_list_add(curr, &(mincpu->ready_head));
       release(&curr->lock);
       continue;
       // linked_list_remove(curr, &sleeping_head);

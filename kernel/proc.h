@@ -108,6 +108,8 @@ struct cpu {
   int noff;                   // Depth of push_off() nesting.
   int intena;                 // Were interrupts enabled before push_off()?
   struct proc ready_head;
+  uint64 counter;
+  struct spinlock lock;
 };
 
 extern struct cpu cpus[NCPU];
