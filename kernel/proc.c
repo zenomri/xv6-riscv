@@ -829,3 +829,11 @@ get_cpu()
   return cpuid();
 }
 
+int
+cpu_process_count(int cpu_num){
+  if (cpu_num < 0 || cpu_num > CPUS-1)
+    return -1;
+  int result = cpus[cpu_num].counter;
+  return result;
+}
+
