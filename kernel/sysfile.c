@@ -510,9 +510,46 @@ symlink(const char* oldpath ,const char* newpath){
 
 uint64
 sys_symlink(void){
-const char* oldpath;
-const char* newpath;
-if( argaddr(0, (uint64*)&oldpath) < 0 || argaddr(1, (uint64*)&newpath) < 0)
+ char oldpath[MAXPATH];
+ char newpath[MAXPATH];
+if( argstr(0, oldpath, MAXPATH) < 0 || argstr(1, newpath, MAXPATH) < 0)
   return -1;
 return symlink(oldpath , newpath);
+}
+
+int
+readlink ( const char* pathname , char* buf , int bufsize ){
+  
+  struct inode* i;
+  char maxbuf[bufsize+1];
+  int count;
+  begin_op();
+  if((i = namei((char*)pathname)) == 0){
+    end_op();
+    return -1;
+  }
+  ilock(i);
+  if(i->type != T_SOFT ){
+   iunlockput(i);
+   return -1;
+  }
+
+  count =  readi(i,0,(uint64)maxbuf,0, bufsize + 1);
+  iunlockput(i);
+  if(count > bufsize){
+    end_op();
+    return -1;
+  }
+  either_copyout(1,(uint64)buf,maxbuf, count);
+  return 0;
+}
+
+uint64
+sys_readlink(void){
+  char pathname[MAXPATH]; 
+  char* buf ;
+  int bufsize;
+  if( argstr(0,pathname,MAXPATH) < 0 || argaddr(1, (uint64*)&buf) < 0 ||argint(2, &bufsize) < 0 )
+    return -1;
+  return readlink (  pathname ,  buf , bufsize );
 }
