@@ -484,3 +484,35 @@ sys_pipe(void)
   }
   return 0;
 }
+
+int
+symlink(const char* oldpath ,const char* newpath){
+  struct inode* i;
+  struct file* f;
+  int fd;
+  begin_op();
+  if((i = create((char*)newpath, T_SOFT, 0 ,0)) == 0)
+    return -1;
+  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
+    if(f)
+      fileclose(f);
+    end_op();
+    return -1;
+  }
+  end_op();
+  if(filewrite(f, (uint64)oldpath, strlen(oldpath)) == -1){
+    fileclose(f);
+    return -1;
+  }
+  fileclose(f);
+  return 0;
+}
+
+uint64
+sys_symlink(void){
+const char* oldpath;
+const char* newpath;
+if( argaddr(0, (uint64*)&oldpath) < 0 || argaddr(1, (uint64*)&newpath) < 0)
+  return -1;
+return symlink(oldpath , newpath);
+}
