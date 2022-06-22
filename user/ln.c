@@ -6,6 +6,12 @@ int
 main(int argc, char *argv[])
 {
   if(argc != 3){
+    if(argc == 4 && (strcmp(argv[1],"-s") == 0)){
+      if(symlink(argv[2], argv[3]) < 0)
+        fprintf(2, "symlink %s %s: failed\n", argv[2], argv[3]);
+      exit(0);
+    }
+
     fprintf(2, "Usage: ln old new\n");
     exit(1);
   }
