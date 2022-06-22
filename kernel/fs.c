@@ -291,7 +291,7 @@ ilock(struct inode *ip)
 {
   struct buf *bp;
   struct dinode *dip;
-
+  
   if(ip == 0 || ip->ref < 1)
     panic("ilock");
 

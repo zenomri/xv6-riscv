@@ -488,25 +488,22 @@ sys_pipe(void)
 int
 symlink(const char* oldpath ,const char* newpath){
   struct inode* i;
-  struct file* f;
-  int fd;
+  int ret = 0;
   begin_op();
-  if((i = create((char*)newpath, T_SOFT, 0 ,0)) == 0)
-    return -1;
-  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
-    if(f)
-      fileclose(f);
+  if((i = create((char*)newpath, T_SOFT, 0 ,0)) == 0){
     end_op();
     return -1;
   }
+  int n = strlen(oldpath) + 1;
+  int tot = writei(i, 0, (uint64)oldpath, 0, n);
+  if(tot != n) 
+    ret = -1;
+  iupdate(i);
+  iunlockput(i);
   end_op();
-  if(filewrite(f, (uint64)oldpath, strlen(oldpath)) == -1){
-    fileclose(f);
-    return -1;
-  }
-  fileclose(f);
-  return 0;
+  return ret;
 }
+
 
 uint64
 sys_symlink(void){
