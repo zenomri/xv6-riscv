@@ -16,6 +16,8 @@
 #include "file.h"
 #include "fcntl.h"
 
+#define MAX_DEREFERENCE 31
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -309,6 +311,25 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
+    int count = MAX_DEREFERENCE;
+    while(ip->type == T_SOFT && count > 0){
+      char buf[MAXPATH];
+      struct inode* di;
+      if(readi(ip,0,(uint64)buf,0,MAXPATH) == -1){
+        iunlock(ip);
+        return -1;
+      }
+      di = namei(buf);
+      if(di == 0){
+        iunlock(ip);
+        return -1;
+      }
+      iunlock(ip);
+      ip = di;
+      ilock(ip);
+      count--;
+    }
+
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
