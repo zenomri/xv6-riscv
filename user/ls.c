@@ -24,6 +24,28 @@ fmtname(char *path)
   return buf;
 }
 
+char*
+fmtnamelink(char *path, char *target)
+{
+  static char buf[DIRSIZ+1];
+  char *p;
+
+  // Find first character after last slash.
+  for(p=path+strlen(path); p >= path && *p != '/'; p--)
+    ;
+  p++;
+
+  // Return blank-padded name.
+  if(strlen(p) >= DIRSIZ)
+    return p;
+  memmove(buf, p, strlen(p));
+  memset(buf+strlen(p), '-', 1);
+  memset(buf+strlen(p)+1, '>', 1);
+  memmove(buf+strlen(p)+2, target, strlen(target));
+  memset(buf+strlen(p)+2+strlen(target), ' ', DIRSIZ-strlen(p)-2-strlen(target));
+  return buf;
+}
+
 void
 ls(char *path)
 {
@@ -65,12 +87,12 @@ ls(char *path)
         printf("ls: cannot stat %s\n", buf);
         continue;
       }
-      if(st.type == T_SOFT){
+      if(st.ino !=  de.inum){
         char soft_link[MAXPATH];
-        char* name = fmtname(buf);
-        if(readlink(name,soft_link,MAXPATH) == -1)
+        if(readlink(buf,soft_link,MAXPATH) == -1)
           continue;
-        printf("%s->%s %d %d %d\n", name,soft_link, st.type, st.ino, st.size); 
+        char* name = fmtnamelink(buf, soft_link);
+        printf("%s %d %d %d\n", name, st.type, st.ino, st.size); 
       } 
       else printf("%s %d %d %d\n", fmtname(buf), st.type, st.ino, st.size);
     }
