@@ -312,7 +312,11 @@ sys_open(void)
     }
     ilock(ip);
     int count = MAX_DEREFERENCE;
-    while(ip->type == T_SOFT && count > 0){
+    while(ip->type == T_SOFT ){
+      if (count <= 0){
+        iunlock(ip);
+        return -1;
+      }
       char buf[MAXPATH];
       struct inode* di;
       if(readi(ip,0,(uint64)buf,0,MAXPATH) == -1){
@@ -421,6 +425,31 @@ sys_chdir(void)
     return -1;
   }
   ilock(ip);
+  int count = MAX_DEREFERENCE;
+  while(ip->type == T_SOFT ){
+    if (count <= 0){
+      iunlock(ip);
+      end_op();
+      return -1;
+    }
+    char buf[MAXPATH];
+    struct inode* di;
+    if(readi(ip,0,(uint64)buf,0,MAXPATH) == -1){
+      iunlock(ip);
+      end_op();
+      return -1;
+    }
+    di = namei(buf);
+    if(di == 0){
+      iunlock(ip);
+      end_op();
+      return -1;
+    }
+    iunlock(ip);
+    ip = di;
+    ilock(ip);
+    count--;
+  }
   if(ip->type != T_DIR){
     iunlockput(ip);
     end_op();

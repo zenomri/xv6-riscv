@@ -6,6 +6,13 @@
 #include "proc.h"
 #include "defs.h"
 #include "elf.h"
+#include "stat.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+#include "buf.h"
+
+#define MAX_DEREFERENCE 31
 
 static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uint sz);
 
@@ -22,12 +29,34 @@ exec(char *path, char **argv)
   struct proc *p = myproc();
 
   begin_op();
-
+  
   if((ip = namei(path)) == 0){
     end_op();
     return -1;
   }
   ilock(ip);
+  int count = MAX_DEREFERENCE;
+  while(ip->type == T_SOFT ){
+    if (count <= 0){
+      iunlock(ip);
+      goto bad;
+    }
+    char buf[MAXPATH];
+    struct inode* di;
+    if(readi(ip,0,(uint64)buf,0,MAXPATH) == -1){
+      iunlock(ip);
+      goto bad;
+    }
+    di = namei(buf);
+    if(di == 0){
+      iunlock(ip);
+      goto bad;
+    }
+    iunlock(ip);
+    ip = di;
+    ilock(ip);
+    count--;
+  }
 
   // Check ELF header
   if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf))

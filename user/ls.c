@@ -3,6 +3,8 @@
 #include "user/user.h"
 #include "kernel/fs.h"
 
+#define MAXPATH 128
+
 char*
 fmtname(char *path)
 {
@@ -63,7 +65,14 @@ ls(char *path)
         printf("ls: cannot stat %s\n", buf);
         continue;
       }
-      printf("%s %d %d %d\n", fmtname(buf), st.type, st.ino, st.size);
+      if(st.type == T_SOFT){
+        char soft_link[MAXPATH];
+        char* name = fmtname(buf);
+        if(readlink(name,soft_link,MAXPATH) == -1)
+          continue;
+        printf("%s->%s %d %d %d\n", name,soft_link, st.type, st.ino, st.size); 
+      } 
+      else printf("%s %d %d %d\n", fmtname(buf), st.type, st.ino, st.size);
     }
     break;
   }
